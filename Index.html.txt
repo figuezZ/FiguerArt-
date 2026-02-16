@@ -1,0 +1,1035 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  PieChart, Wallet, Plus, List, Settings, Trash2, 
+  TrendingUp, TrendingDown, Users, DollarSign, 
+  Home, Briefcase, Zap, Droplet, Wifi, Search, X, Save,
+  ArrowRightLeft, AlertCircle, BookOpen, Package, Tag, 
+  MinusCircle, PlusCircle, UserCheck, UserX, History, Ban,
+  AlertTriangle, RotateCw, ShoppingCart, BarChart3, Calendar,
+  FileText, Download, Printer, Layers, Ruler, CreditCard, 
+  Landmark, Receipt, PenTool, ScanBarcode
+} from 'lucide-react';
+
+// --- CONFIGURACIÓN Y CONSTANTES GLOBALES ---
+const PAYMENT_METHODS = ['Efectivo', 'Transferencia', 'Crédito/Débito'];
+
+const CATEGORIES = {
+    income: ['Venta Boleta', 'Venta Factura', 'Ingreso Sin Boleta', 'Pago de Fiado', 'Servicio Ploteo'],
+    expense: [
+        'Mercadería Negocio', 'Mercadería Casa',
+        'Luz', 'Agua', 'Gas', 'Internet', 'WiFi',
+        'Préstamos (Salida)', 'Sueldos', 'Arriendo', 'Insumos Ploteo', 'Otros'
+    ]
+};
+
+const PLOT_FORMATS = ['A0', 'A1', 'A2', 'A3', 'A4', 'Pliego', 'Pendón', 'Especial'];
+// Eliminado PLOT_TYPES
+
+// --- Componentes UI Base ---
+const Card = ({ children, className = "" }) => (
+  <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-6 ${className}`}>
+    {children}
+  </div>
+);
+
+const Button = ({ children, onClick, variant = "primary", className = "", icon: Icon, type="button", disabled=false }) => {
+  const baseStyle = "flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+  const variants = {
+    primary: "bg-orange-600 text-white hover:bg-orange-700 shadow-sm shadow-orange-200", 
+    success: "bg-teal-600 text-white hover:bg-teal-700 shadow-sm",
+    danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-100",
+    warning: "bg-yellow-500 text-white hover:bg-yellow-600 shadow-sm",
+    ghost: "text-gray-500 hover:bg-gray-100 hover:text-gray-700",
+    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50",
+    dark: "bg-gray-800 text-white hover:bg-gray-900 shadow-sm"
+  };
+  return (
+    <button type={type} onClick={onClick} disabled={disabled} className={`${baseStyle} ${variants[variant]} ${className}`}>
+      {Icon && <Icon size={18} />}
+      {children}
+    </button>
+  );
+};
+
+const Badge = ({ children, type }) => {
+    const styles = {
+        income: "bg-teal-100 text-teal-800", 
+        expense: "bg-red-100 text-red-800",
+        debt: "bg-orange-100 text-orange-800",
+        stock: "bg-indigo-100 text-indigo-800",
+        method: "bg-gray-100 text-gray-600",
+        frequent: "bg-purple-100 text-purple-800",
+        occasional: "bg-gray-100 text-gray-600",
+        success: "bg-green-100 text-green-800",
+        lowStock: "bg-red-100 text-red-800 animate-pulse",
+        okStock: "bg-emerald-100 text-emerald-800",
+        highRot: "bg-orange-100 text-orange-800 border border-orange-200",
+        lowRot: "bg-blue-50 text-blue-600",
+        plot: "bg-blue-100 text-blue-800",
+        design: "bg-purple-100 text-purple-800"
+    };
+    return <span className={`px-2 py-0.5 rounded text-xs font-semibold flex items-center gap-1 w-fit ${styles[type] || styles.method}`}>{children}</span>;
+};
+
+// --- Componentes de Gráficas ---
+const SimpleBarChart = ({ data, height = 150 }) => {
+    const maxVal = Math.max(...data.map(d => Math.max(d.income, d.expense)), 1000); 
+    return (
+        <div className="flex items-end justify-between gap-2 w-full" style={{ height: `${height}px` }}>
+            {data.map((day, i) => (
+                <div key={i} className="flex flex-col items-center flex-1 group relative">
+                    <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-800 text-white text-xs p-2 rounded z-10 whitespace-nowrap">
+                        <p className="font-bold">{day.label}</p>
+                        <p className="text-teal-300">Ing: ${day.income}</p>
+                        <p className="text-red-300">Gas: ${day.expense}</p>
+                    </div>
+                    <div className="w-full flex justify-center items-end gap-1 h-full">
+                        <div className="w-3 md:w-4 bg-teal-400 rounded-t hover:bg-teal-500 transition-all" style={{ height: `${(day.income / maxVal) * 100}%` }}></div>
+                        <div className="w-3 md:w-4 bg-red-400 rounded-t hover:bg-red-500 transition-all" style={{ height: `${(day.expense / maxVal) * 100}%` }}></div>
+                    </div>
+                    <span className="text-[10px] text-gray-400 mt-2 truncate w-full text-center">{day.shortLabel}</span>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+// --- Sistema Principal ---
+
+export default function LibreriaManager() {
+  const [view, setView] = useState('dashboard'); 
+  
+  // Transacciones
+  const [transactions, setTransactions] = useState(() => {
+    const saved = localStorage.getItem('lib_transactions');
+    return saved ? JSON.parse(saved) : [
+        { id: 1, type: 'income', amount: 45000, category: 'Venta Boleta', date: new Date().toISOString().split('T')[0], method: 'Efectivo', accountId: null },
+    ];
+  });
+
+  // Clientes
+  const [clients, setClients] = useState(() => {
+    const saved = localStorage.getItem('lib_clients');
+    return saved ? JSON.parse(saved) : [
+      { id: 1, name: 'Sra. Juanita', type: 'Frecuente', isCreditAllowed: true, creditLimit: 50000, currentDebt: 15000, history: [] },
+    ];
+  });
+
+  // Inventario (Actualizado con campos nuevos en datos de ejemplo)
+  const [inventory, setInventory] = useState(() => {
+    const saved = localStorage.getItem('lib_inventory');
+    return saved ? JSON.parse(saved) : [
+      { id: 1, barcode: '780123456', name: 'Cuaderno Universitario', category: 'Papelería', purchasePrice: 900, price: 1590, stock: 24, minStock: 10, type: 'Recurrente', soldCount: 45 },
+    ];
+  });
+
+  // Ploteos
+  const [plots, setPlots] = useState(() => {
+    const saved = localStorage.getItem('lib_plots');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Cuentas / Billeteras
+  const [accounts, setAccounts] = useState(() => {
+      const saved = localStorage.getItem('lib_accounts');
+      return saved ? JSON.parse(saved) : [
+          { id: '1', name: 'Caja Chica Negocio', type: 'cash', balance: 0 },
+          { id: '2', name: 'Banco Estado (Cuenta RUT)', type: 'bank', balance: 0 }
+      ];
+  });
+
+  // Cuentas Hogar / Deudas
+  const [bills, setBills] = useState(() => {
+      const saved = localStorage.getItem('lib_bills');
+      return saved ? JSON.parse(saved) : [
+          { id: '1', provider: 'CGE', service: 'Luz Casa', clientNum: '1234567-8', amount: 0, history: [] },
+          { id: '2', provider: 'Essbio', service: 'Agua Casa', clientNum: '9876543-2', amount: 0, history: [] }
+      ];
+  });
+
+  // Diseño
+  const [designProjects, setDesignProjects] = useState(() => {
+      const saved = localStorage.getItem('lib_design');
+      return saved ? JSON.parse(saved) : [];
+  });
+
+  const [invCategories, setInvCategories] = useState(() => {
+    const saved = localStorage.getItem('lib_inv_categories');
+    return saved ? JSON.parse(saved) : ['Papelería', 'Libros', 'Regalos', 'Manualidades'];
+  });
+
+  // --- Persistencia ---
+  useEffect(() => { localStorage.setItem('lib_transactions', JSON.stringify(transactions)); }, [transactions]);
+  useEffect(() => { localStorage.setItem('lib_clients', JSON.stringify(clients)); }, [clients]);
+  useEffect(() => { localStorage.setItem('lib_inventory', JSON.stringify(inventory)); }, [inventory]);
+  useEffect(() => { localStorage.setItem('lib_plots', JSON.stringify(plots)); }, [plots]);
+  useEffect(() => { localStorage.setItem('lib_accounts', JSON.stringify(accounts)); }, [accounts]);
+  useEffect(() => { localStorage.setItem('lib_bills', JSON.stringify(bills)); }, [bills]);
+  useEffect(() => { localStorage.setItem('lib_design', JSON.stringify(designProjects)); }, [designProjects]);
+
+  // --- Cálculos Globales ---
+  const stats = useMemo(() => {
+    const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
+    const expense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+    const totalDebt = clients.reduce((acc, c) => acc + c.currentDebt, 0);
+    const lowStockCount = inventory.filter(i => i.stock <= i.minStock).length;
+    
+    return { income, expense, balance: income - expense, totalDebt, lowStockCount };
+  }, [transactions, clients, inventory]);
+
+  const chartData = useMemo(() => {
+    const last7Days = [...Array(7)].map((_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        return d.toISOString().split('T')[0];
+    });
+
+    const weeklyData = last7Days.map(date => {
+        const dayTxs = transactions.filter(t => t.date === date);
+        return {
+            date,
+            label: new Date(date).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' }),
+            shortLabel: new Date(date).toLocaleDateString('es-CL', { weekday: 'short' }),
+            income: dayTxs.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0),
+            expense: dayTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0),
+        };
+    });
+    return { weeklyData };
+  }, [transactions]);
+
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(amount);
+  };
+
+  // --- Lógica del Sistema ---
+  
+  const handleTransaction = (data) => {
+      const amount = parseInt(data.amount) || 0;
+      const newTx = { ...data, id: Date.now(), amount };
+      setTransactions([newTx, ...transactions]);
+
+      if (data.accountId) {
+          updateAccountBalance(data.accountId, amount, data.type);
+      }
+      setView('dashboard');
+  };
+
+  const updateAccountBalance = (accountId, amount, type) => {
+      setAccounts(prevAccounts => prevAccounts.map(acc => {
+          if (acc.id === accountId) {
+              const newBalance = type === 'income' ? acc.balance + amount : acc.balance - amount;
+              return { ...acc, balance: newBalance };
+          }
+          return acc;
+      }));
+  };
+
+  const manualBalanceAdjust = (id, newBalance) => {
+      setAccounts(accounts.map(a => a.id === id ? { ...a, balance: parseInt(newBalance) } : a));
+  };
+
+  const payBill = (billId, amount, accountId) => {
+      const billDetails = bills.find(b => b.id === billId);
+      if (!billDetails) return;
+      setBills(bills.map(b => b.id === billId ? { ...b, history: [{ date: new Date().toISOString().split('T')[0], amount: parseInt(amount), accountId }, ...b.history] } : b));
+      if (accountId) updateAccountBalance(accountId, parseInt(amount), 'expense');
+  };
+
+  const addClient = (clientData) => setClients([...clients, { ...clientData, id: Date.now(), creditLimit: parseInt(clientData.creditLimit) || 0, currentDebt: 0, history: [] }]);
+  
+  // -- Función para eliminar cliente --
+  const deleteClient = (id) => {
+      if (window.confirm('¿Estás seguro de eliminar este cliente? Se perderá su historial y deuda.')) {
+          setClients(clients.filter(c => c.id !== id));
+          // Forzar la vista a limpiarse si el cliente borrado estaba seleccionado
+          // Esto se maneja en el componente, pero idealmente aquí limpiamos estado global si hubiera.
+      }
+  };
+
+  const addClientDebt = (clientId, amount, detail) => {
+      const client = clients.find(c => c.id === parseInt(clientId));
+      if(!client) return;
+      if(client.currentDebt + amount > client.creditLimit) {
+          alert(`¡Límite excedido! Cupo disponible: ${formatCurrency(client.creditLimit - client.currentDebt)}`);
+          return;
+      }
+      setClients(clients.map(c => c.id === parseInt(clientId) ? { ...c, currentDebt: c.currentDebt + amount, history: [{ date: new Date().toISOString().split('T')[0], action: 'Fiado', amount, detail }, ...c.history] } : c));
+  };
+
+  const payClientDebt = (clientId, amount, method, accountId = '') => {
+      handleTransaction({ 
+          type: 'income', 
+          category: 'Pago de Fiado', 
+          amount, 
+          description: 'Abono Cliente', 
+          method, 
+          date: new Date().toISOString().split('T')[0],
+          accountId: accountId 
+      });
+      setClients(clients.map(c => c.id === clientId ? { ...c, currentDebt: Math.max(0, c.currentDebt - amount), history: [{ date: new Date().toISOString().split('T')[0], action: 'Pago', amount, detail: `Pago ${method}` }, ...c.history] } : c));
+  };
+  
+  const toggleClientStatus = (clientId) => setClients(clients.map(c => c.id === clientId ? { ...c, isCreditAllowed: !c.isCreditAllowed } : c));
+
+  // --- Lógica Inventario Actualizada ---
+  const handleAddProduct = (product) => { 
+      setInventory([...inventory, { 
+          ...product, 
+          id: Date.now(), 
+          stock: parseInt(product.stock), 
+          minStock: parseInt(product.minStock) || 5, 
+          price: parseInt(product.price), 
+          purchasePrice: parseInt(product.purchasePrice) || 0, 
+          soldCount: 0 
+      }]); 
+  };
+  
+  const updateStock = (id, change) => {
+      setInventory(inventory.map(item => {
+          if (item.id === id) { return { ...item, stock: Math.max(0, item.stock + change), soldCount: change < 0 ? item.soldCount + Math.abs(change) : item.soldCount }; }
+          return item;
+      }));
+  };
+  const deleteProduct = (id) => { if(window.confirm('¿Eliminar producto?')) setInventory(inventory.filter(i => i.id !== id)); };
+  const handleAddCategory = (newCat) => { if (newCat && !invCategories.includes(newCat)) { setInvCategories([...invCategories, newCat]); return true; } return false; };
+
+  // --- Lógica Ploteo Simplificada ---
+  const addPlotJob = (job) => {
+      const total = parseInt(job.total);
+      // Solo guardamos lo necesario
+      const newJob = { 
+          id: Date.now(), 
+          date: new Date().toISOString().split('T')[0], 
+          format: job.format,
+          quantity: job.quantity,
+          total: total
+      };
+      setPlots([newJob, ...plots]);
+
+      // Descripción simplificada sin Tipo ni Papel
+      const description = `Ploteo ${job.format} (${job.quantity} un.)`;
+
+      if (job.isCredit) {
+          if (job.clientId) {
+            addClientDebt(job.clientId, total, description);
+            alert("Trabajo registrado y cargado a la cuenta del cliente.");
+          } else {
+            alert("Error: Seleccionaste fiado pero no un cliente.");
+          }
+      } else {
+          handleTransaction({
+              type: 'income',
+              category: 'Servicio Ploteo',
+              amount: total,
+              description: description,
+              method: job.paymentMethod || 'Efectivo',
+              date: new Date().toISOString().split('T')[0],
+              accountId: job.accountId || '' 
+          });
+          alert("Trabajo registrado e ingreso sumado a caja.");
+      }
+  };
+
+  const downloadCSV = (data, periodName) => {
+    const headers = "Fecha,Tipo,Categoría,Descripción,Método,Monto\n";
+    const rows = data.map(t => 
+        `${t.date},${t.type === 'income' ? 'Ingreso' : 'Gasto'},${t.category},"${t.description}",${t.method},${t.amount}`
+    ).join("\n");
+    
+    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(headers + rows);
+    const link = document.createElement("a");
+    link.setAttribute("href", csvContent);
+    link.setAttribute("download", `Flujo_Caja_${periodName}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  // --- Vistas ---
+
+  const ReportsView = () => { 
+    const [period, setPeriod] = useState('day'); 
+    
+    const filteredTx = useMemo(() => {
+        const today = new Date();
+        return transactions.filter(t => {
+            const tDate = new Date(t.date);
+            if (period === 'day') return t.date === today.toISOString().split('T')[0];
+            if (period === 'week') {
+                const weekAgo = new Date(today);
+                weekAgo.setDate(today.getDate() - 7);
+                return tDate >= weekAgo;
+            }
+            if (period === 'month') return tDate.getMonth() === today.getMonth() && tDate.getFullYear() === today.getFullYear();
+            return true;
+        }).sort((a,b) => new Date(b.date) - new Date(a.date));
+    }, [transactions, period]);
+
+    const reportStats = useMemo(() => {
+        const income = filteredTx.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
+        const expense = filteredTx.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+        return { income, expense, balance: income - expense };
+    }, [filteredTx]);
+
+    const printReport = () => {
+        window.print();
+    };
+
+    return (
+        <div className="animate-fade-in max-w-5xl mx-auto print:p-0">
+             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 print:hidden">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                        <FileText className="text-indigo-600"/> Reportes y Cierres
+                    </h2>
+                    <p className="text-gray-500 text-sm">Genera archivos de tu flujo de caja</p>
+                </div>
+                <div className="flex gap-2 bg-white p-1 rounded-lg border">
+                    {['day', 'week', 'month', 'all'].map(p => (
+                        <button 
+                            key={p}
+                            onClick={() => setPeriod(p)}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${period === p ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                        >
+                            {p === 'day' ? 'Hoy' : p === 'week' ? 'Semana' : p === 'month' ? 'Mes' : 'Todo'}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 print:grid-cols-3 print:gap-4">
+                <Card className="bg-teal-50 border-teal-200 print:border">
+                    <p className="text-teal-700 text-xs font-bold uppercase">Total Ingresos</p>
+                    <h3 className="text-2xl font-bold text-teal-900">{formatCurrency(reportStats.income)}</h3>
+                </Card>
+                <Card className="bg-red-50 border-red-200 print:border">
+                    <p className="text-red-700 text-xs font-bold uppercase">Total Gastos</p>
+                    <h3 className="text-2xl font-bold text-red-900">{formatCurrency(reportStats.expense)}</h3>
+                </Card>
+                <Card className={`${reportStats.balance >= 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-orange-50 border-orange-200'} print:border`}>
+                    <p className="text-gray-600 text-xs font-bold uppercase">Balance / Saldo</p>
+                    <h3 className={`text-2xl font-bold ${reportStats.balance >= 0 ? 'text-indigo-900' : 'text-orange-900'}`}>{formatCurrency(reportStats.balance)}</h3>
+                </Card>
+            </div>
+
+            <div className="flex justify-end gap-3 mb-6 print:hidden">
+                <Button variant="outline" icon={Printer} onClick={printReport}>Imprimir Vista (PDF)</Button>
+                <Button variant="success" icon={Download} onClick={() => downloadCSV(filteredTx, period)}>Descargar Excel (CSV)</Button>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden print:border-none print:shadow-none">
+                <div className="p-4 border-b bg-gray-50 print:bg-transparent">
+                    <h3 className="font-bold text-gray-700">Detalle de Movimientos ({filteredTx.length})</h3>
+                </div>
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 text-gray-500 uppercase print:bg-gray-100">
+                        <tr>
+                            <th className="px-4 py-3">Fecha</th>
+                            <th className="px-4 py-3">Categoría</th>
+                            <th className="px-4 py-3">Método</th>
+                            <th className="px-4 py-3 text-right">Ingreso</th>
+                            <th className="px-4 py-3 text-right">Egreso</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {filteredTx.length === 0 ? (
+                            <tr><td colSpan="5" className="p-8 text-center text-gray-400">No hay movimientos en este período.</td></tr>
+                        ) : filteredTx.map(t => (
+                            <tr key={t.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3">{t.date}</td>
+                                <td className="px-4 py-3">
+                                    <div className="font-medium text-gray-800">{t.category}</div>
+                                    <div className="text-xs text-gray-500">{t.description}</div>
+                                </td>
+                                <td className="px-4 py-3"><Badge type="method">{t.method}</Badge></td>
+                                <td className="px-4 py-3 text-right text-teal-700 font-medium">
+                                    {t.type === 'income' ? formatCurrency(t.amount) : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-right text-red-700 font-medium">
+                                    {t.type === 'expense' ? formatCurrency(t.amount) : '-'}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div className="hidden print:block mt-8 text-center text-xs text-gray-500 border-t pt-4">
+                <p>Generado por Sistema Control Librería Figuerart - {new Date().toLocaleString()}</p>
+            </div>
+        </div>
+    );
+  };
+
+  const DesignView = () => (
+      <div className="animate-fade-in flex flex-col items-center justify-center min-h-[400px] text-center p-8 bg-white rounded-xl border border-gray-100 shadow-sm">
+          <div className="bg-purple-50 p-6 rounded-full mb-6">
+              <PenTool size={64} className="text-purple-500" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Estudio de Diseño</h2>
+          <Badge type="design">Próximamente</Badge>
+          <p className="text-gray-500 max-w-md mt-4">
+              Gestión de proyectos de diseño gráfico, ploteos complejos y entregas creativas.
+          </p>
+      </div>
+  );
+
+  const AccountsView = () => {
+      const [showAdd, setShowAdd] = useState(false);
+      const [newAcc, setNewAcc] = useState({ name: '', type: 'bank', initial: 0 });
+
+      const addAccount = () => {
+          if(!newAcc.name) return;
+          setAccounts([...accounts, { id: Date.now().toString(), name: newAcc.name, type: newAcc.type, balance: parseInt(newAcc.initial) }]);
+          setShowAdd(false);
+          setNewAcc({ name: '', type: 'bank', initial: 0 });
+      };
+
+      return (
+          <div className="animate-fade-in max-w-4xl mx-auto">
+              <div className="flex justify-between items-center mb-6">
+                  <div>
+                      <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                          <Landmark className="text-emerald-600"/> Mis Cuentas de Dinero
+                      </h2>
+                      <p className="text-gray-500 text-sm">Gestiona efectivo, bancos y ahorros</p>
+                  </div>
+                  <Button variant="success" icon={Plus} onClick={() => setShowAdd(!showAdd)}>Nueva Cuenta</Button>
+              </div>
+
+              {showAdd && (
+                  <Card className="mb-6 bg-emerald-50 border-emerald-200">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                          <div>
+                              <label className="text-xs font-bold text-emerald-800">Nombre Cuenta</label>
+                              <input className="w-full p-2 border rounded" placeholder="Ej. Ahorro Vivienda" value={newAcc.name} onChange={e => setNewAcc({...newAcc, name: e.target.value})} />
+                          </div>
+                          <div>
+                              <label className="text-xs font-bold text-emerald-800">Tipo</label>
+                              <select className="w-full p-2 border rounded" value={newAcc.type} onChange={e => setNewAcc({...newAcc, type: e.target.value})}>
+                                  <option value="bank">Banco / Digital</option>
+                                  <option value="cash">Efectivo Físico</option>
+                              </select>
+                          </div>
+                          <div>
+                              <label className="text-xs font-bold text-emerald-800">Saldo Inicial</label>
+                              <input type="number" className="w-full p-2 border rounded" placeholder="0" value={newAcc.initial} onChange={e => setNewAcc({...newAcc, initial: e.target.value})} />
+                          </div>
+                          <Button onClick={addAccount} className="w-full">Guardar</Button>
+                      </div>
+                  </Card>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {accounts.map(acc => (
+                      <Card key={acc.id} className="relative overflow-hidden group">
+                          <div className="absolute top-0 right-0 p-4 opacity-10">
+                              {acc.type === 'bank' ? <CreditCard size={100} /> : <Wallet size={100} />}
+                          </div>
+                          <div className="relative z-10">
+                              <div className="flex justify-between items-start mb-4">
+                                  <div>
+                                      <h3 className="font-bold text-lg text-gray-700">{acc.name}</h3>
+                                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded capitalize">{acc.type === 'bank' ? 'Banco' : 'Efectivo'}</span>
+                                  </div>
+                                  <button 
+                                    className="text-gray-300 hover:text-red-500 transition-colors"
+                                    onClick={() => { if(window.confirm('¿Borrar cuenta?')) setAccounts(accounts.filter(a => a.id !== acc.id)) }}
+                                  >
+                                      <Trash2 size={18} />
+                                  </button>
+                              </div>
+                              <div className="mb-4">
+                                  <p className="text-xs text-gray-500 uppercase font-bold">Saldo Disponible</p>
+                                  <p className={`text-3xl font-bold ${acc.balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                      {formatCurrency(acc.balance)}
+                                  </p>
+                              </div>
+                              <div className="pt-4 border-t border-gray-100 flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">Ajustar manual:</span>
+                                  <input 
+                                    type="number" 
+                                    className="w-24 p-1 text-xs border rounded bg-gray-50" 
+                                    placeholder="Nuevo saldo"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            manualBalanceAdjust(acc.id, e.target.value);
+                                            e.target.value = '';
+                                        }
+                                    }}
+                                  />
+                              </div>
+                          </div>
+                      </Card>
+                  ))}
+              </div>
+          </div>
+      );
+  };
+
+  const HouseholdView = () => {
+      const [showAdd, setShowAdd] = useState(false);
+      const [newBill, setNewBill] = useState({ provider: '', service: '', clientNum: '' });
+      const [payData, setPayData] = useState({ billId: null, amount: '', accountId: '' });
+
+      const addBill = () => {
+          if(!newBill.provider) return;
+          setBills([...bills, { id: Date.now().toString(), ...newBill, amount: 0, history: [] }]);
+          setShowAdd(false);
+          setNewBill({ provider: '', service: '', clientNum: '' });
+      };
+
+      const handlePayment = (e) => {
+          e.preventDefault();
+          payBill(payData.billId, payData.amount, payData.accountId);
+          setPayData({ billId: null, amount: '', accountId: '' });
+          alert("Pago registrado correctamente.");
+      };
+
+      return (
+          <div className="animate-fade-in max-w-4xl mx-auto">
+              <div className="flex justify-between items-center mb-6">
+                  <div>
+                      <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                          <Home className="text-blue-600"/> Cuentas del Hogar
+                      </h2>
+                      <p className="text-gray-500 text-sm">Registro de servicios básicos y deudas</p>
+                  </div>
+                  <Button variant="primary" icon={Plus} onClick={() => setShowAdd(!showAdd)}>Nueva Deuda/Servicio</Button>
+              </div>
+
+              {showAdd && (
+                  <Card className="mb-6 bg-blue-50 border-blue-200">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                          <div><label className="text-xs font-bold text-blue-800">Proveedor</label><input className="w-full p-2 border rounded" placeholder="Ej. CGE" value={newBill.provider} onChange={e => setNewBill({...newBill, provider: e.target.value})} /></div>
+                          <div><label className="text-xs font-bold text-blue-800">Servicio</label><input className="w-full p-2 border rounded" placeholder="Ej. Luz" value={newBill.service} onChange={e => setNewBill({...newBill, service: e.target.value})} /></div>
+                          <div><label className="text-xs font-bold text-blue-800">Nº Cliente</label><input className="w-full p-2 border rounded" placeholder="123456" value={newBill.clientNum} onChange={e => setNewBill({...newBill, clientNum: e.target.value})} /></div>
+                          <Button onClick={addBill} className="md:col-span-3 w-full">Guardar Servicio</Button>
+                      </div>
+                  </Card>
+              )}
+
+              {payData.billId && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                      <Card className="w-full max-w-md mx-4">
+                          <h3 className="font-bold text-lg mb-4">Registrar Pago</h3>
+                          <form onSubmit={handlePayment} className="space-y-4">
+                              <div><label className="block text-sm font-medium">Monto</label><input type="number" required autoFocus className="w-full p-2 border rounded" value={payData.amount} onChange={e => setPayData({...payData, amount: e.target.value})} /></div>
+                              <div><label className="block text-sm font-medium">¿Usar fondos de cuenta? (Opcional)</label><select className="w-full p-2 border rounded" value={payData.accountId} onChange={e => setPayData({...payData, accountId: e.target.value})}><option value="">No descontar saldo</option>{accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name} (${acc.balance})</option>)}</select></div>
+                              <div className="flex gap-2"><Button type="button" variant="ghost" onClick={() => setPayData({ billId: null, amount: '', accountId: '' })} className="flex-1">Cancelar</Button><Button type="submit" variant="success" className="flex-1">Confirmar</Button></div>
+                          </form>
+                      </Card>
+                  </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {bills.map(bill => (
+                      <Card key={bill.id} className="border-l-4 border-l-blue-500">
+                          <div className="flex justify-between items-start mb-2"><div><h3 className="font-bold text-gray-800">{bill.service}</h3><p className="text-sm text-blue-600 font-medium">{bill.provider}</p></div><button onClick={() => { if(window.confirm('¿Borrar servicio?')) setBills(bills.filter(b => b.id !== bill.id)) }} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button></div>
+                          <div className="bg-gray-50 p-2 rounded text-xs text-gray-600 mb-4 flex justify-between"><span>Nº Cliente:</span><span className="font-mono font-bold select-all">{bill.clientNum}</span></div>
+                          <div className="space-y-2"><Button variant="outline" className="w-full text-sm py-1" onClick={() => setPayData({...payData, billId: bill.id})}>Registrar Pago</Button>{bill.history.length > 0 && (<div className="mt-3 pt-3 border-t text-xs"><p className="font-bold text-gray-400 mb-1">Último pago:</p><div className="flex justify-between text-gray-600"><span>{bill.history[0].date}</span><span className="font-bold">{formatCurrency(bill.history[0].amount)}</span></div></div>)}</div>
+                      </Card>
+                  ))}
+              </div>
+          </div>
+      );
+  };
+
+  const PlotterView = () => {
+      // Estado simplificado (eliminado 'type' y 'paper')
+      const [form, setForm] = useState({ format: 'A1', quantity: 1, price: 1500, isCredit: false, clientId: '', paymentMethod: 'Efectivo', accountId: '' });
+      const total = form.quantity * form.price;
+
+      return (
+          <div className="animate-fade-in max-w-5xl mx-auto">
+              <div className="flex justify-between mb-6"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Printer className="text-blue-600"/> Centro de Ploteo</h2><p className="text-gray-500 text-sm">Gestión de planos</p></div></div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Card className="lg:col-span-1 border-blue-200 h-fit">
+                      <h3 className="font-bold text-gray-800 mb-4 pb-2 border-b">Nuevo Trabajo</h3>
+                      <form onSubmit={(e) => { e.preventDefault(); addPlotJob({...form, total}); setForm({...form, quantity:1, price: 1500}); }} className="space-y-4">
+                          {/* Selector de Formato */}
+                          <div>
+                              <label className="text-xs font-bold text-gray-600">Formato</label>
+                              <select className="w-full p-2 border rounded" value={form.format} onChange={e => setForm({...form, format: e.target.value})}>
+                                  {PLOT_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
+                              </select>
+                          </div>
+                          
+                          {/* Campos eliminados: Tipo y Papel */}
+
+                          <div className="grid grid-cols-2 gap-3">
+                              <div><label className="text-xs font-bold text-gray-600">Cant.</label><input type="number" min="1" className="w-full p-2 border rounded font-bold" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} /></div>
+                              <div><label className="text-xs font-bold text-gray-600">Precio</label><input type="number" className="w-full p-2 border rounded" value={form.price} onChange={e => setForm({...form, price: e.target.value})} /></div>
+                          </div>
+                          <div className="bg-gray-100 p-3 rounded-lg flex justify-between items-center"><span className="font-bold text-gray-600">TOTAL:</span><span className="font-bold text-xl text-blue-600">{formatCurrency(total)}</span></div>
+                          <div className="pt-2 border-t mt-2">
+                              <div className="flex gap-2 mb-3"><button type="button" onClick={() => setForm({...form, isCredit: false})} className={`flex-1 py-1 text-sm border rounded ${!form.isCredit ? 'bg-green-100 border-green-300 text-green-800 font-bold' : 'bg-gray-50 text-gray-500'}`}>Pagar Ahora</button><button type="button" onClick={() => setForm({...form, isCredit: true})} className={`flex-1 py-1 text-sm border rounded ${form.isCredit ? 'bg-orange-100 border-orange-300 text-orange-800 font-bold' : 'bg-gray-50 text-gray-500'}`}>Cargar a Cliente</button></div>
+                              {!form.isCredit ? (
+                                  <div>
+                                      <label className="text-xs font-bold text-gray-600">Método Pago</label><select className="w-full p-2 border rounded mb-2" value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})}>{PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                      <label className="text-xs font-bold text-gray-600">Destino (Cuenta)</label><select className="w-full p-2 border rounded" value={form.accountId} onChange={e => setForm({...form, accountId: e.target.value})}><option value="">Caja General</option>{accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}</select>
+                                      <Button type="submit" variant="success" className="w-full mt-4">Ingresar</Button>
+                                  </div>
+                              ) : (
+                                  <div><label className="text-xs font-bold text-orange-800">Cliente</label><select required className="w-full p-2 border rounded bg-orange-50 border-orange-200" value={form.clientId} onChange={e => setForm({...form, clientId: e.target.value})}><option value="">-- Elegir --</option>{clients.filter(c => c.isCreditAllowed).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><Button type="submit" variant="warning" className="w-full mt-4" disabled={!form.clientId}>Cargar Deuda</Button></div>
+                              )}
+                          </div>
+                      </form>
+                  </Card>
+                  <div className="lg:col-span-2">
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                          <div className="p-4 border-b bg-gray-50"><h3 className="font-bold text-gray-700">Historial Reciente</h3></div>
+                          <table className="w-full text-left text-sm">
+                              <thead className="bg-white text-gray-500 uppercase border-b">
+                                  <tr>
+                                      <th className="px-4 py-3">Fecha</th>
+                                      <th className="px-4 py-3">Detalle</th>
+                                      <th className="px-4 py-3 text-center">Formato</th>
+                                      <th className="px-4 py-3 text-right">Total</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {plots.slice(0, 10).map((p, idx) => (
+                                      <tr key={p.id || idx} className="hover:bg-gray-50">
+                                          <td className="px-4 py-3 text-gray-600">{p.date}</td>
+                                          {/* Columna Detalle simplificada */}
+                                          <td className="px-4 py-3">
+                                              <div className="font-medium text-gray-800">Cantidad: {p.quantity}</div>
+                                          </td>
+                                          <td className="px-4 py-3 text-center"><Badge type="plot">{p.format}</Badge></td>
+                                          <td className="px-4 py-3 text-right font-bold text-gray-700">{formatCurrency(p.total)}</td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  };
+
+  const InventoryView = () => {
+    const [showAdd, setShowAdd] = useState(false);
+    const [filter, setFilter] = useState('');
+    const [onlyLowStock, setOnlyLowStock] = useState(false);
+    const [newProd, setNewProd] = useState({ barcode: '', name: '', category: invCategories[0], purchasePrice: '', price: '', stock: '', minStock: '', type: 'Recurrente' });
+    const [newCatName, setNewCatName] = useState('');
+    const [isAddingCat, setIsAddingCat] = useState(false);
+
+    const filtered = inventory.filter(i => {
+        const matchesText = i.name.toLowerCase().includes(filter.toLowerCase()) || i.category.toLowerCase().includes(filter.toLowerCase()) || (i.barcode && i.barcode.includes(filter));
+        const matchesStock = onlyLowStock ? i.stock <= i.minStock : true;
+        return matchesText && matchesStock;
+    });
+
+    const submitProduct = (e) => {
+        e.preventDefault(); 
+        handleAddProduct(newProd); 
+        setNewProd({ barcode: '', name: '', category: invCategories[0], purchasePrice: '', price: '', stock: '', minStock: '', type: 'Recurrente' }); 
+        setShowAdd(false);
+    };
+
+    return (
+        <div className="animate-fade-in print:hidden">
+             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                <div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Package className="text-indigo-600"/> Inventario</h2><p className="text-gray-500 text-sm">Control de stock, costos y rotación</p></div>
+                <div className="flex gap-2 items-center"><button onClick={() => setOnlyLowStock(!onlyLowStock)} className={`px-3 py-2 rounded-lg text-sm font-medium border flex items-center gap-2 ${onlyLowStock ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-gray-600 border-gray-200'}`}><AlertTriangle size={16}/> {onlyLowStock ? 'Viendo Bajo Stock' : 'Ver Alertas'}</button><Button onClick={() => setShowAdd(!showAdd)} icon={Plus} variant="primary">Nuevo</Button></div>
+            </div>
+            <div className="mb-4 relative"><Search className="absolute left-3 top-3 text-gray-400" size={18}/><input type="text" placeholder="Buscar por nombre, categoría o código..." value={filter} onChange={e => setFilter(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm outline-none" /></div>
+            
+            {showAdd && (
+                <Card className="mb-6 bg-indigo-50 border-indigo-200">
+                    <form onSubmit={submitProduct} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="md:col-span-2 flex gap-2">
+                            <div className="w-1/3">
+                                <label className="text-xs font-bold text-indigo-800 flex items-center gap-1"><ScanBarcode size={12}/> Código Barras</label>
+                                <input className="w-full p-2 border rounded font-mono" placeholder="Escanea aquí..." value={newProd.barcode} onChange={e => setNewProd({...newProd, barcode: e.target.value})} />
+                            </div>
+                            <div className="w-2/3">
+                                <label className="text-xs font-bold text-indigo-800">Nombre Producto</label>
+                                <input required className="w-full p-2 border rounded" value={newProd.name} onChange={e => setNewProd({...newProd, name: e.target.value})} />
+                            </div>
+                        </div>
+                        <div><label className="text-xs font-bold text-indigo-800">Categoría</label>{!isAddingCat ? (<div className="flex gap-2"><select className="w-full p-2 border rounded" value={newProd.category} onChange={e => setNewProd({...newProd, category: e.target.value})}>{invCategories.map(c => <option key={c} value={c}>{c}</option>)}</select><button type="button" onClick={() => setIsAddingCat(true)} className="px-3 bg-white border rounded"><Plus size={16}/></button></div>) : (<div className="flex gap-2"><input autoFocus placeholder="Nueva..." className="w-full p-2 border rounded" value={newCatName} onChange={e => setNewCatName(e.target.value)} /><button type="button" onClick={() => { if(handleAddCategory(newCatName)) { setNewProd({...newProd, category: newCatName}); setIsAddingCat(false); setNewCatName(''); } }} className="px-3 bg-indigo-600 text-white rounded">OK</button></div>)}</div>
+                        <div><label className="text-xs font-bold text-indigo-800">Tipo</label><select className="w-full p-2 border rounded" value={newProd.type} onChange={e => setNewProd({...newProd, type: e.target.value})}><option value="Recurrente">Recurrente</option><option value="Ocasional">Ocasional</option></select></div>
+                        <div className="grid grid-cols-3 gap-2 md:col-span-2">
+                            <div><label className="text-xs font-bold text-indigo-800">Costo Compra</label><input type="number" className="w-full p-2 border rounded bg-gray-50" placeholder="$ Costo" value={newProd.purchasePrice} onChange={e => setNewProd({...newProd, purchasePrice: e.target.value})} /></div>
+                            <div><label className="text-xs font-bold text-indigo-800">Precio Venta</label><input required type="number" className="w-full p-2 border rounded font-bold" placeholder="$ Venta" value={newProd.price} onChange={e => setNewProd({...newProd, price: e.target.value})} /></div>
+                            <div>
+                                <label className="text-xs font-bold text-green-700">Margen Est.</label>
+                                <div className="p-2 bg-green-50 border border-green-100 rounded text-center text-sm font-bold text-green-800">
+                                    {newProd.price && newProd.purchasePrice ? `${Math.round(((newProd.price - newProd.purchasePrice) / newProd.price) * 100)}%` : '-'}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="text-xs font-bold text-indigo-800">Stock Actual</label><input required type="number" className="w-full p-2 border rounded" value={newProd.stock} onChange={e => setNewProd({...newProd, stock: e.target.value})} /></div>
+                            <div><label className="text-xs font-bold text-indigo-800">Stock Mínimo</label><input required type="number" className="w-full p-2 border rounded bg-red-50" value={newProd.minStock} onChange={e => setNewProd({...newProd, minStock: e.target.value})} /></div>
+                        </div>
+                        <div className="md:col-span-2"><Button type="submit" className="w-full">Guardar Producto</Button></div>
+                    </form>
+                </Card>
+            )}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-500 uppercase"><tr><th className="px-4 py-3">Producto</th><th className="px-4 py-3 text-center">Costos</th><th className="px-4 py-3 text-center">Estado</th><th className="px-4 py-3 text-center">Control Stock</th><th className="px-4 py-3 text-center"></th></tr></thead>
+                    <tbody className="divide-y divide-gray-100">{filtered.map(item => {
+                        const isLowStock = item.stock <= item.minStock;
+                        const margin = item.price - (item.purchasePrice || 0);
+                        const marginPercent = item.price > 0 ? Math.round((margin / item.price) * 100) : 0;
+                        
+                        return (
+                            <tr key={item.id} className={`hover:bg-gray-50 ${isLowStock ? 'bg-red-50/30' : ''}`}>
+                                <td className="px-4 py-3">
+                                    <div className="font-bold text-gray-800">{item.name}</div>
+                                    <div className="text-xs text-gray-400 font-mono mb-1">{item.barcode || 'Sin Código'}</div>
+                                    <div className="flex gap-2"><Badge type="method">{item.category}</Badge><span className="text-[10px] uppercase font-bold text-gray-400 border px-1 rounded">{item.type}</span></div>
+                                </td>
+                                <td className="px-4 py-3">
+                                    <div className="flex justify-between text-xs mb-1"><span className="text-gray-500">Costo:</span> <span>{formatCurrency(item.purchasePrice || 0)}</span></div>
+                                    <div className="flex justify-between font-bold text-sm mb-1"><span className="text-gray-700">Venta:</span> <span>{formatCurrency(item.price)}</span></div>
+                                    <div className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded text-center font-bold">Ganancia: {formatCurrency(margin)} ({marginPercent}%)</div>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                    <div className="flex justify-center mb-1">{isLowStock ? <Badge type="lowStock">BAJO STOCK</Badge> : <Badge type="okStock">OK</Badge>}</div>
+                                    <div className="flex justify-center flex-col items-center">{item.soldCount > 20 ? <Badge type="highRot">Alta Rot.</Badge> : <Badge type="lowRot">Normal</Badge>}<span className="text-[10px] text-gray-400 mt-1">{item.soldCount} vendidos</span></div>
+                                </td>
+                                <td className="px-4 py-3"><div className="flex items-center justify-center gap-3"><button onClick={() => updateStock(item.id, -1)} className="text-gray-400 hover:text-red-500 disabled:opacity-30 p-1 border rounded" disabled={item.stock <= 0}><MinusCircle size={18}/></button><span className={`font-bold w-8 text-center text-lg ${isLowStock ? 'text-red-600' : 'text-gray-700'}`}>{item.stock}</span><button onClick={() => updateStock(item.id, 1)} className="text-gray-400 hover:text-teal-600 p-1 border rounded"><PlusCircle size={18}/></button></div></td>
+                                <td className="px-4 py-3 text-center"><button onClick={() => deleteProduct(item.id)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 size={16}/></button></td>
+                            </tr>
+                        );
+                    })}</tbody>
+                </table>
+            </div>
+        </div>
+    );
+  };
+
+  const ClientsView = () => {
+    const [showAdd, setShowAdd] = useState(false);
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [newClient, setNewClient] = useState({ name: '', type: 'Frecuente', isCreditAllowed: true, creditLimit: '' });
+    const [actionAmount, setActionAmount] = useState('');
+    const [actionDetail, setActionDetail] = useState('');
+    const [depositAccount, setDepositAccount] = useState('');
+
+    const deleteClient = (id) => {
+        if(window.confirm('¿Estás seguro de eliminar este cliente? Se perderá su historial.')) {
+            setClients(clients.filter(c => c.id !== id));
+            if (selectedClient?.id === id) setSelectedClient(null);
+        }
+    };
+
+    return (
+        <div className="animate-fade-in max-w-5xl mx-auto print:hidden">
+             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                <div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Users className="text-orange-600"/> Clientes</h2><p className="text-gray-500 text-sm">Créditos y límites</p></div>
+                <Button variant="primary" onClick={() => setShowAdd(!showAdd)} icon={Plus}>Nuevo Cliente</Button>
+            </div>
+            {showAdd && (
+                <Card className="mb-6 bg-orange-50 border-orange-200">
+                    <form onSubmit={(e) => { e.preventDefault(); addClient(newClient); setShowAdd(false); setNewClient({name:'', type:'Frecuente', isCreditAllowed:true, creditLimit:''}); }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="md:col-span-2"><label className="text-xs font-bold text-orange-800">Nombre</label><input required className="w-full p-2 border rounded" value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} /></div>
+                        <div><label className="text-xs font-bold text-orange-800">Tipo</label><select className="w-full p-2 border rounded" value={newClient.type} onChange={e => setNewClient({...newClient, type: e.target.value})}><option value="Frecuente">Frecuente</option><option value="Ocasional">Ocasional</option></select></div>
+                        <div><label className="text-xs font-bold text-orange-800">Límite ($)</label><input required type="number" className="w-full p-2 border rounded" value={newClient.creditLimit} onChange={e => setNewClient({...newClient, creditLimit: e.target.value})} /></div>
+                        <div className="flex items-center gap-2 mt-2"><input type="checkbox" checked={newClient.isCreditAllowed} onChange={e => setNewClient({...newClient, isCreditAllowed: e.target.checked})} /><label>Autorizado para fiar</label></div>
+                        <div className="md:col-span-2"><Button type="submit" className="w-full">Guardar</Button></div>
+                    </form>
+                </Card>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                    {clients.map(client => (
+                        <div key={client.id} className={`bg-white rounded-lg p-4 border cursor-pointer ${selectedClient?.id === client.id ? 'border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'}`} onClick={() => setSelectedClient(client)}>
+                            <div className="flex justify-between items-start mb-2">
+                                <div><h4 className="font-bold text-gray-800">{client.name}</h4><div className="flex gap-2 mt-1"><Badge type={client.type === 'Frecuente' ? 'frequent' : 'occasional'}>{client.type}</Badge>{!client.isCreditAllowed && <span className="text-xs bg-red-100 text-red-600 px-2 rounded font-bold">Bloqueado</span>}</div></div>
+                                <div className="flex flex-col items-end">
+                                    <div className="text-right"><p className="text-xs text-gray-500">Deuda</p><p className={`text-xl font-bold ${client.currentDebt > 0 ? 'text-orange-600' : 'text-green-600'}`}>{formatCurrency(client.currentDebt)}</p></div>
+                                    <button onClick={(e) => { e.stopPropagation(); deleteClient(client.id); }} className="text-gray-400 hover:text-red-600 mt-1 p-1 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                                </div>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-2 mt-2"><div className={`h-2 rounded-full ${client.currentDebt > client.creditLimit ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min((client.currentDebt / client.creditLimit) * 100, 100)}%` }}></div></div>
+                        </div>
+                    ))}
+                </div>
+                <div className="lg:sticky lg:top-4 h-fit">
+                    {selectedClient ? (
+                        <Card className="border-orange-100 bg-orange-50/50">
+                            <h3 className="font-bold text-xl text-gray-800 mb-4 flex justify-between">{selectedClient.name} <button onClick={() => toggleClientStatus(selectedClient.id)} className="text-sm bg-white border px-2 rounded">{selectedClient.isCreditAllowed ? 'Bloquear' : 'Desbloquear'}</button></h3>
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                <div className="col-span-2"><input type="number" className="w-full p-2 border rounded font-bold" value={actionAmount} onChange={e => setActionAmount(e.target.value)} placeholder="$ 0" /><input className="w-full mt-2 p-2 border rounded text-sm" value={actionDetail} onChange={e => setActionDetail(e.target.value)} placeholder="Detalle (para fiado)" /></div>
+                                <Button variant="warning" onClick={() => addClientDebt(selectedClient.id, parseInt(actionAmount), actionDetail)}>+ Fiado</Button>
+                                <div className="flex flex-col gap-2">
+                                    <select className="w-full text-xs p-1 border rounded" value={depositAccount} onChange={e => setDepositAccount(e.target.value)}>
+                                        <option value="">A Caja General</option>
+                                        {accounts.map(acc => <option key={acc.id} value={acc.id}>A {acc.name}</option>)}
+                                    </select>
+                                    <Button variant="success" onClick={() => payClientDebt(selectedClient.id, parseInt(actionAmount), 'Efectivo', depositAccount)}>Pago / Abono</Button>
+                                </div>
+                            </div>
+                            <div className="mt-4 max-h-60 overflow-y-auto space-y-2">{selectedClient.history.map((h, i) => <div key={i} className="bg-white p-2 border rounded text-sm flex justify-between"><span>{h.date} - {h.detail}</span><span className="font-bold">{formatCurrency(h.amount)}</span></div>)}</div>
+                        </Card>
+                    ) : <div className="text-center text-gray-400 p-8">Selecciona un cliente</div>}
+                </div>
+            </div>
+        </div>
+    );
+  };
+
+  const TransactionForm = ({ type }) => {
+      const isExpense = type === 'expense';
+      const [form, setForm] = useState({ 
+          amount: '', description: '', 
+          category: isExpense ? 'Mercadería Negocio' : 'Venta Boleta', 
+          method: 'Efectivo', 
+          date: new Date().toISOString().split('T')[0],
+          accountId: '' 
+      });
+
+      return (
+          <div className="max-w-xl mx-auto animate-fade-in print:hidden">
+              <div className="flex justify-between mb-6">
+                  <h2 className={`text-2xl font-bold ${isExpense ? 'text-red-600' : 'text-teal-600'}`}>
+                      {isExpense ? 'Registrar Salida' : 'Registrar Entrada'}
+                  </h2>
+                  <button onClick={() => setView('dashboard')}><X/></button>
+              </div>
+              <Card>
+                  <form onSubmit={(e) => { e.preventDefault(); handleTransaction({ ...form, type }); }} className="space-y-5">
+                      <div>
+                          <label className="block text-sm font-medium">Monto</label>
+                          <input type="number" required autoFocus className="w-full p-3 border rounded text-2xl font-bold" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
+                      </div>
+                      
+                      {/* Vinculación con Cuentas (Opcional) */}
+                      <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <label className="block text-xs font-bold text-gray-500 mb-1">
+                              {isExpense ? '¿Pagar desde cuenta? (Opcional)' : '¿Depositar en cuenta? (Opcional)'}
+                          </label>
+                          <select className="w-full p-2 border rounded bg-white text-sm" value={form.accountId} onChange={e => setForm({...form, accountId: e.target.value})}>
+                              <option value="">-- Sin vincular (Solo registro) --</option>
+                              {accounts.map(acc => (
+                                  <option key={acc.id} value={acc.id}>{acc.name} (Saldo: {formatCurrency(acc.balance)})</option>
+                              ))}
+                          </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-sm font-medium">Categoría</label>
+                              <select className="w-full p-2 border rounded" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                                  { (isExpense ? CATEGORIES.expense : CATEGORIES.income).map(c => <option key={c} value={c}>{c}</option>) }
+                              </select>
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium">Método</label>
+                              <select className="w-full p-2 border rounded" value={form.method} onChange={e => setForm({...form, method: e.target.value})}>
+                                  {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                          </div>
+                      </div>
+                      <input className="w-full p-2 border rounded" placeholder="Detalle (Opcional)" value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+                      <Button type="submit" variant={isExpense ? 'primary' : 'success'} className="w-full py-3">{isExpense ? 'Guardar Gasto' : 'Guardar Ingreso'}</Button>
+                  </form>
+              </Card>
+          </div>
+      );
+  };
+
+  const DashboardView = () => (
+    <div className="space-y-6 animate-fade-in print:hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-teal-50 border-teal-100 p-4">
+            <div className="flex justify-between items-start">
+                <div><p className="text-teal-600 text-xs font-bold uppercase">Entradas Mes</p><h3 className="text-2xl font-bold text-teal-900">{formatCurrency(stats.income)}</h3></div>
+                <div className="p-2 bg-teal-100 rounded-lg"><TrendingUp className="text-teal-600" size={20} /></div>
+            </div>
+        </Card>
+        <Card className="bg-red-50 border-red-100 p-4">
+            <div className="flex justify-between items-start">
+                <div><p className="text-red-600 text-xs font-bold uppercase">Salidas Mes</p><h3 className="text-2xl font-bold text-red-900">{formatCurrency(stats.expense)}</h3></div>
+                <div className="p-2 bg-red-100 rounded-lg"><TrendingDown className="text-red-600" size={20} /></div>
+            </div>
+        </Card>
+        <Card className="bg-emerald-50 border-emerald-100 p-4 cursor-pointer" onClick={() => setView('accounts')}>
+             <div className="flex justify-between items-start">
+                <div><p className="text-emerald-600 text-xs font-bold uppercase">Saldo Cuentas</p><h3 className="text-2xl font-bold text-emerald-900">{formatCurrency(accounts.reduce((a,c) => a + c.balance, 0))}</h3></div>
+                <div className="p-2 bg-emerald-100 rounded-lg"><Landmark className="text-emerald-600" size={20} /></div>
+            </div>
+        </Card>
+        <Card className="bg-orange-50 border-orange-100 p-4 cursor-pointer" onClick={() => setView('clients')}>
+            <div className="flex justify-between items-start">
+                <div><p className="text-orange-600 text-xs font-bold uppercase">Por Cobrar</p><h3 className="text-2xl font-bold text-orange-900">{formatCurrency(stats.totalDebt)}</h3></div>
+                <div className="p-2 bg-orange-100 rounded-lg"><Users className="text-orange-600" size={20} /></div>
+            </div>
+        </Card>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="lg:col-span-2">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2"><BarChart3 className="text-indigo-500" size={20}/> Flujo de Caja (7 días)</h3>
+                  <div className="flex gap-4 text-xs font-medium">
+                      <div className="flex items-center gap-1"><div className="w-3 h-3 bg-teal-400 rounded"></div> Ingresos</div>
+                      <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-400 rounded"></div> Gastos</div>
+                  </div>
+              </div>
+              <SimpleBarChart data={chartData.weeklyData} />
+          </Card>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button onClick={() => setView('add-income')} className="flex items-center justify-center gap-3 p-4 bg-teal-600 text-white rounded-xl shadow hover:bg-teal-700 transition-all active:scale-95">
+              <TrendingUp size={24} />
+              <div className="text-left"><span className="block font-bold">Registrar Entrada</span><span className="text-teal-100 text-xs">Ventas, facturas</span></div>
+          </button>
+          <button onClick={() => setView('add-expense')} className="flex items-center justify-center gap-3 p-4 bg-red-600 text-white rounded-xl shadow hover:bg-red-700 transition-all active:scale-95">
+              <TrendingDown size={24} />
+              <div className="text-left"><span className="block font-bold">Registrar Gasto</span><span className="text-red-100 text-xs">Compras, servicios</span></div>
+          </button>
+      </div>
+    </div>
+  );
+
+  // --- Layout ---
+  return (
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex flex-col md:flex-row">
+      <aside className="bg-white border-r border-gray-200 w-full md:w-20 lg:w-64 flex-shrink-0 flex flex-row md:flex-col justify-between md:h-screen sticky top-0 z-10 shadow-sm print:hidden">
+        <div>
+            <div className="p-4 flex items-center justify-center lg:justify-start gap-3 border-b border-gray-100 h-24">
+                <div className="bg-orange-50 p-2.5 rounded-xl border border-orange-100 hidden lg:block"><BookOpen size={28} className="text-orange-600" /></div>
+                <div className="hidden lg:block"><h1 className="text-xl font-extrabold text-gray-800 leading-none">Control</h1><span className="text-sm font-bold text-teal-600 uppercase">Librería</span></div>
+            </div>
+            <nav className="flex flex-row md:flex-col p-2 gap-1 overflow-x-auto">
+                {[ 
+                   { id: 'dashboard', label: 'Panel', icon: PieChart }, 
+                   { id: 'reports', label: 'Reportes', icon: FileText }, 
+                   { id: 'design', label: 'Diseño', icon: PenTool }, 
+                   { id: 'accounts', label: 'Cuentas', icon: Landmark }, 
+                   { id: 'household', label: 'Hogar/Deudas', icon: Home }, 
+                   { id: 'plotter', label: 'Ploteo', icon: Printer }, 
+                   { id: 'inventory', label: 'Inventario', icon: Package }, 
+                   { id: 'clients', label: 'Clientes', icon: Users }, 
+                   { id: 'add-income', label: 'Entradas', icon: TrendingUp }, 
+                   { id: 'add-expense', label: 'Gastos', icon: TrendingDown }, 
+                ].map(item => (
+                    <button key={item.id} onClick={() => setView(item.id)} className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full transition-colors ${view === item.id ? 'bg-orange-50 text-orange-700' : 'text-gray-600 hover:bg-gray-100'}`}><item.icon size={18} /> <span className="hidden lg:block">{item.label}</span></button>
+                ))}
+            </nav>
+        </div>
+        <div className="hidden md:block p-4"><div className="bg-teal-50 rounded-xl p-3 border border-teal-100"><p className="text-xs text-teal-800 text-center font-medium">Sistema Figuerart v2.5</p></div></div>
+      </aside>
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+        {view === 'dashboard' && <DashboardView />}
+        {view === 'reports' && <ReportsView />}
+        {view === 'design' && <DesignView />}
+        {view === 'accounts' && <AccountsView />}
+        {view === 'household' && <HouseholdView />}
+        {view === 'plotter' && <PlotterView />}
+        {view === 'inventory' && <InventoryView />}
+        {view === 'clients' && <ClientsView />}
+        {view === 'add-income' && <TransactionForm type="income" />}
+        {view === 'add-expense' && <TransactionForm type="expense" />}
+      </main>
+    </div>
+  );
+}
